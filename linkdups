@@ -2,7 +2,7 @@
 #
 # linkdups - Find duplicate files in a directory tree and link() them.
 #
-# $Id: linkdups,v 1.4 2000/04/06 17:23:06 steve Exp $
+# $Id: linkdups,v 1.5 2000/04/06 17:47:15 steve Exp $
 
 use strict;
 
@@ -92,7 +92,7 @@ sub add($)
 	{
 	    info "$file is a duplicate of $files{$hash}";
 	    my $size=-s $file;
-	    if ($size<0)
+	    if ($size==0)
 	    {
 	        info " but it is only $size bytes\n";
 		return;
