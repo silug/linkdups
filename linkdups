@@ -1,0 +1,98 @@
+#!/usr/bin/perl
+
+use MD5;
+
+$context=new MD5;
+
+if ($ARGV[0] eq "-r")
+{
+    $recursive=shift;
+}
+
+if ($#ARGV==-1)
+{
+    if ($recursive)
+    {
+        $ARGV[0]=".";
+    }
+    else
+    {
+        $ARGV[0]="-";
+    }
+}
+
+foreach $file (@ARGV)
+{
+    if (!lstat($file))
+    {
+        print STDERR &basename(), ": $file: $!\n";
+	next;
+    }
+
+    if ($recursive && (-d(_)))
+    {
+        &recurse_into($file);
+    }
+    else
+    {
+        &printsum($file);
+    }
+}
+
+sub printsum
+{
+    my $file=shift;
+
+    if (open(FILE, "<$file"))
+    {
+        #binmode(FILE);
+        $context->reset();
+        $context->addfile(FILE);
+        print $context->hexdigest(), "  $file\n";
+        close(FILE);
+    }
+    else
+    {
+        print STDERR &basename(), ": $file: $!\n";
+    }
+}
+
+sub recurse_into
+{
+    my $dir=shift;
+
+    if (opendir(DIR, $dir))
+    {
+	my $x;
+        for $x (grep(!/^\.{1,2}$/, readdir(DIR)))
+	{
+	    lstat("$dir/$x");
+	    if (-d(_))
+	    {
+	        &recurse_into("$dir/$x");
+	    }
+	    elsif (-f(_))
+	    {
+	        &printsum("$dir/$x");
+	    }
+	    else
+	    {
+	        print STDERR &basename(),
+		    ": '$dir/$x' is not a plain file, skipping...\n";
+	    }
+	}
+    }
+    else
+    {
+        die "Can't open $dir: $!\n";
+    }
+}
+
+sub basename
+{
+    my $foo;
+    return $name if defined($name);
+    @foo=split('/', $0);
+    $name=$foo[$#foo];
+    return $name;
+}
