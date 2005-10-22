@@ -2,17 +2,28 @@
 #
 # linkdups - Find duplicate files in a directory tree and link() them.
 #
-# $Id: linkdups,v 1.6 2002/01/25 13:52:11 steve Exp $
+# Copyright (C) 2000-2005 Steven Pritchard <steve@kspei.com>
+# This program is free software; you can redistribute it and/or
+# modify it under the terms of the GNU General Public License as
+# published by the Free Software Foundation; either version 2 of
+# the License, or (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+#
+# $Id: linkdups,v 1.7 2005/10/22 20:36:30 steve Exp $
 
 use strict;
+use warnings;
 
 use Getopt::Std;
 use Digest::MD5;
 use FileHandle;
 use DirHandle;
 
-use vars qw(%opt $context $recursive %files $debug $verbose $dryrun $total $num);
-use vars qw(%sizes $numtotal $start $pass1);
+our (%opt,$context,$recursive,%files,$debug,$verbose,$dryrun,$total,$num);
+our (%sizes,$numtotal,$start,$pass1);
 
 sub info(@);
 sub debug(@);
@@ -35,62 +46,47 @@ $verbose=$opt{'v'} if (defined($opt{'v'}));
 $debug=$opt{'D'} if (defined($opt{'D'}));
 $dryrun=$opt{'n'} if (defined($opt{'n'}));
 
-if ($verbose || $debug)
-{
+if ($verbose or $debug) {
     eval { use Time::HiRes qw(gettimeofday tv_interval); };
     $start=[gettimeofday] if (!$@);
 }
 
-if ($#ARGV==-1)
-{
-    if ($recursive)
-    {
+if ($#ARGV==-1) {
+    if ($recursive) {
         $ARGV[0]=".";
-    }
-    else
-    {
+    } else {
         $ARGV[0]="-";
     }
 }
 
 # Pass 1 - stat() everything.
-foreach my $file (@ARGV)
-{
+for my $file (@ARGV) {
     my @statbuf;
-    if (!(@statbuf=lstat($file)))
-    {
+    if (!(@statbuf=lstat($file))) {
         print STDERR &basename(), ": $file: $!\n";
-	next;
+        next;
     }
 
-    if ($recursive && (-d(_)))
-    {
+    if ($recursive and (-d(_))) {
         &recurse_into($file);
-    }
-    else
-    {
-	if ($statbuf[3]>1)
-	{
-	    print STDERR "link count on $file is $statbuf[3]!\n";
-	}
-	$numtotal++;
+    } else {
+        if ($statbuf[3]>1) {
+            print STDERR "link count on $file is $statbuf[3]!\n";
+        }
+        $numtotal++;
         push(@{$sizes{$statbuf[7]}}, $file);
     }
 }
 
-if ($verbose || $debug)
-{
+if ($verbose or $debug) {
     my $elapsed;
 
-    if ($start)
-    {
+    if ($start) {
         $pass1=[gettimeofday];
         $elapsed=tv_interval($start, $pass1);
-    }
-    else
-    {
+    } else {
         $pass1=time;
-	$elapsed=$pass1-$^T;
+        $elapsed=$pass1-$^T;
     }
     info "$numtotal files scanned in $elapsed seconds.\n";
 }
@@ -98,23 +94,18 @@ if ($verbose || $debug)
 $context=new Digest::MD5;
 
 # Pass 2 - Check for files with the same size, md5sum them and link duplicates.
-for my $size (sort { $b <=> $a } keys(%sizes))
-{
+for my $size (sort { $b <=> $a } keys(%sizes)) {
     my $files=$sizes{$size};
-    if (@$files>1)
-    {
-	info scalar(@$files), " files of size $size\n";
-	check($files);
+    if (@$files>1) {
+        info scalar(@$files), " files of size $size\n";
+        check($files);
     }
 }
 
 info "$num files checked in ";
-if ($start)
-{
+if ($start) {
     info tv_interval($pass1);
-}
-else
-{
+} else {
     info time-$pass1;
 }
 info " seconds ($numtotal files scanned).\n";
@@ -123,94 +114,71 @@ info "$total bytes ";
 info "would be " if ($dryrun);
 info "saved.\n";
 
-sub check($)
-{
+sub check($) {
     my $files=shift;
     my %md5;
 
-    for my $file (@$files)
-    {
+    for my $file (@$files) {
         debug("$file\n");
         $num++;
 
-        if (my $fd=new FileHandle "<$file")
-        {
+        if (my $fd=new FileHandle "<$file") {
             $context->reset();
             $context->addfile($fd);
-	    my $hash=$context->hexdigest();
-	    debug("$hash  $file\n");
+            my $hash=$context->hexdigest();
+            debug("$hash  $file\n");
             close($fd);
-	    if (defined($md5{$hash}))
-	    {
-	        info "$file is a duplicate of $md5{$hash}";
-	        my $size=-s $file;
-	        if ($size==0)
-	        {
-	            info " but it is only $size bytes\n";
-		    return;
-	        }
-	        else
-	        {
-	            info "\n";
-		    $total+=$size;
-		    return if ($dryrun);
-		    debug("unlinking $file...\n");
-		    unlink($file) or die "Can't unlink $file: $!\n";
-		    debug("linking $md5{$hash} to $file...\n");
-		    link($md5{$hash}, $file)
-		        or die "Can't link $md5{$hash} to $file: $!\n";
-	        }
-	    }
-	    else
-	    {
+            if (defined($md5{$hash})) {
+                info "$file is a duplicate of $md5{$hash}";
+                my $size=-s $file;
+                if ($size==0) {
+                    info " but it is only $size bytes\n";
+                    return;
+                } else {
+                    info "\n";
+                    $total+=$size;
+                    return if ($dryrun);
+                    debug("unlinking $file...\n");
+                    unlink($file) or die "Can't unlink $file: $!\n";
+                    debug("linking $md5{$hash} to $file...\n");
+                    link($md5{$hash}, $file)
+                        or die "Can't link $md5{$hash} to $file: $!\n";
+                }
+            } else {
                 $md5{$hash}=$file;
-	    }
-        }
-        else
-        {
+            }
+        } else {
             print STDERR &basename(), ": $file: $!\n";
         }
     }
 }
 
-sub recurse_into($)
-{
+sub recurse_into($) {
     my $dir=shift;
 
-    if (opendir(DIR, $dir))
-    {
-	my $x;
-        for $x (grep(!/^\.{1,2}$/, readdir(DIR)))
-	{
-	    my @statbuf=lstat("$dir/$x");
-	    if (-d(_))
-	    {
-	        &recurse_into("$dir/$x");
-	    }
-	    elsif (-f(_))
-	    {
-		if ($statbuf[3]>1)
-		{
-		    print STDERR "link count on $dir/$x is $statbuf[3]!\n";
-		}
-	        $numtotal++;
+    if (opendir(DIR, $dir)) {
+        my $x;
+        for $x (grep(!/^\.{1,2}$/, readdir(DIR))) {
+            my @statbuf=lstat("$dir/$x");
+            if (-d(_)) {
+                &recurse_into("$dir/$x");
+            } elsif (-f(_)) {
+                if ($statbuf[3]>1) {
+                    print STDERR "link count on $dir/$x is $statbuf[3]!\n";
+                }
+                $numtotal++;
                 push(@{$sizes{$statbuf[7]}}, "$dir/$x");
-	    }
-	    else
-	    {
-	        info &basename(),
-		    ": '$dir/$x' is not a plain file, skipping...\n";
-	    }
-	}
-    }
-    else
-    {
+            } else {
+                info &basename(),
+                    ": '$dir/$x' is not a plain file, skipping...\n";
+            }
+        }
+    } else {
         die "Can't open $dir: $!\n";
     }
 }
 
-sub basename($)
-{
+sub basename($) {
     my $foo=shift;
     $foo=$0 if (!defined($foo));
 
@@ -218,12 +186,10 @@ sub basename($)
     return substr($foo,(-1*length($foo))+(rindex($foo, "/")+1));
 }
 
-sub debug(@)
-{
+sub debug(@) {
     print STDERR @_ if ($debug);
 }
 
-sub info(@)
-{
-    print @_ if ($verbose || $debug);
+sub info(@) {
+    print @_ if ($verbose or $debug);
 }
