@@ -12,7 +12,7 @@
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
 # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
 #
-# $Id: linkdups,v 1.9 2005/10/22 22:11:34 steve Exp $
+# $Id: linkdups,v 1.10 2005/10/22 22:13:02 steve Exp $
 
 use strict;
 use warnings;
@@ -196,7 +196,7 @@ sub recurse_into($) {
             }
         }
     } else {
-        die "Can't open $dir: $!\n";
+        warn "Can't open $dir: $!\n";
     }
 }
 
