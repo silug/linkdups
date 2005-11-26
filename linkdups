@@ -12,7 +12,7 @@
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
 # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
 #
-# $Id: linkdups,v 1.13 2005/11/25 23:47:27 steve Exp $
+# $Id: linkdups,v 1.14 2005/11/26 00:36:37 steve Exp $
 
 use strict;
 use warnings;
@@ -156,11 +156,11 @@ sub check($) {
                     info "\n";
                     $total+=$size;
                     return if ($dryrun);
-                    #debug("unlinking $file...\n");
-                    #unlink($file) or die "Can't unlink $file: $!\n";
                     if ((stat $md5{$hash})[1] == (stat $file)[1]) {
                         debug("$md5{$hash} and $file are the same file.\n");
                     } else {
+                        debug("unlinking $file...\n");
+                        unlink($file) or die "Can't unlink $file: $!\n";
                         debug("linking $md5{$hash} to $file...\n");
                         link($md5{$hash}, $file)
                             or die "Can't link $md5{$hash} to $file: $!\n";
