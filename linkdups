@@ -12,7 +12,7 @@
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
 # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
 #
-# $Id: linkdups,v 1.15 2006/07/01 22:11:53 steve Exp $
+# $Id: linkdups,v 1.16 2006/07/01 22:21:02 steve Exp $
 
 use strict;
 use warnings;
@@ -23,6 +23,7 @@ use FileHandle;
 use DirHandle;
 use File::Basename;
 
+sub usage($);
 sub info(@);
 sub debug(@);
 sub recurse_into($);
@@ -38,7 +39,9 @@ our %sizes=();
 our $pass1;
 
 our %opt;
-getopts('rvDnt', \%opt);
+getopts('rvDnth', \%opt) or usage(1);
+
+usage(0) if $opt{'h'};
 
 our $recursive=defined($opt{'r'}) ? 1 : 0;
 our $verbose=  defined($opt{'v'}) ? 1 : 0;
@@ -212,6 +215,24 @@ sub debug(@) {
 
 sub info(@) {
     print @_ if ($verbose or $debug);
+}
+
+sub usage($) {
+    print STDERR <<END;
+
+Usage: @{[basename($0)]} [options] [files]
+
+    -h          Print this message.
+    -r          Work recursively.
+    -v          Be more verbose.
+    -D          Turn on debugging.
+    -n          Don't link anything, just list what would be one (dry run).
+    -t          Only link files that have identical timestamps.
+
+END
+
+    exit $_[0];
+
 }
 
 # vi: set ai et:
