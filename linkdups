@@ -12,7 +12,7 @@
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
 # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
 #
-# $Id: linkdups,v 1.16 2006/07/01 22:21:02 steve Exp $
+# $Id: linkdups,v 1.17 2006/07/31 18:32:56 steve Exp $
 
 use strict;
 use warnings;
@@ -36,7 +36,7 @@ our $start=0;
 
 our %files=();
 our %sizes=();
-our $pass1;
+our $pass1=0;
 
 our %opt;
 getopts('rvDnth', \%opt) or usage(1);
