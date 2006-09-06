@@ -12,7 +12,7 @@
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
 # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
 #
-# $Id: linkdups,v 1.18 2006/09/05 02:19:22 steve Exp $
+# $Id: linkdups,v 1.19 2006/09/06 17:52:37 steve Exp $
 
 use strict;
 use warnings;
@@ -27,7 +27,6 @@ sub usage($);
 sub info(@);
 sub debug(@);
 sub recurse_into($);
-#sub check($);
 sub stuff($);
 sub checksum($$);
 
@@ -64,6 +63,11 @@ our $verbose =   defined($opt{'v'}) ? 1 : 0;
 our $debug =     defined($opt{'D'}) ? 1 : 0;
 our $dryrun =    defined($opt{'n'}) ? 1 : 0;
 our $usetimes =  defined($opt{'t'}) ? 1 : 0;
+
+$SIG{'USR1'}=sub {
+        print STDERR "files found: $numtotal, files checked: $num, bytes "
+            . ($dryrun ? "recoverable" : "saved") . ": $total\n";
+    };
 
 if ($verbose or $debug) {
     eval { use Time::HiRes qw(gettimeofday tv_interval); };
