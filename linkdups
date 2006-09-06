@@ -12,7 +12,7 @@
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
 # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
 #
-# $Id: linkdups,v 1.19 2006/09/06 17:52:37 steve Exp $
+# $Id: linkdups,v 1.20 2006/09/06 21:26:47 steve Exp $
 
 use strict;
 use warnings;
@@ -31,12 +31,6 @@ sub stuff($);
 sub checksum($$);
 
 our @statbuf=();
-
-sub device() { return $statbuf[0]; };
-sub inode() { return $statbuf[1]; }
-sub links() { return $statbuf[3]; }
-sub fsize() { return $statbuf[7]; }
-sub mtime() { return $statbuf[9]; }
 
 our $total=0;
 our $numtotal=0;
@@ -215,7 +209,7 @@ for my $dev (keys(%data)) {
                     @statbuf=stat($source);
                     warn "Actual link count != expected!\n"
                         if ($data{$dev}->{$size}->{$master}->{'links'}
-                            != links());
+                            != $statbuf[3]);
                 }
 
                 $total+=$size;
@@ -233,21 +227,23 @@ sub stuff($) {
 
     $numtotal++;
 
-    if (exists($data{device()}) and exists($data{device()}->{fsize()})
-        and exists($data{device()}->{fsize()}->{inode()})) {
-        push(@{$data{device()}->{fsize()}->{inode()}->{'files'}}, $file);
+    if (exists($data{$statbuf[0]}) and exists($data{$statbuf[0]}->{$statbuf[7]})
+        and exists($data{$statbuf[0]}->{$statbuf[7]}->{$statbuf[1]})) {
+        push(@{$data{$statbuf[0]}->{$statbuf[7]}->{$statbuf[1]}->{'files'}},
+            $file);
     }
-    $data{device()}->{fsize()}->{inode()}={
-        #'device'        => device(),
-        #'inode'         => inode(),
-        #'size'          => size(),
-        'links'         => links(),
+    $data{$statbuf[0]}->{$statbuf[7]}->{$statbuf[1]}={
+        #'device'        => $statbuf[0],
+        #'inode'         => $statbuf[1],
+        #'size'          => $statbuf[7],
+        'links'         => $statbuf[3],
         'files'         => [ $file ],
     };
-    $data{device()}->{fsize()}->{inode()}->{'mtime'}=mtime() if ($usetimes);
+    $data{$statbuf[0]}->{$statbuf[7]}->{$statbuf[1]}->{'mtime'}=$statbuf[9]
+        if ($usetimes);
 
-    $data{device()}->{fsize()}->{inode()}->{'md5sum'}="d41d8cd98f00b204e9800998ecf8427e"
-        if (fsize() == 0);
+    $data{$statbuf[0]}->{$statbuf[7]}->{$statbuf[1]}->{'md5sum'}="d41d8cd98f00b204e9800998ecf8427e"
+        if ($statbuf[7] == 0);
 
     return 1;
 }
