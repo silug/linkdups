@@ -12,7 +12,7 @@
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
 # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
 #
-# $Id: linkdups,v 1.21 2007/07/08 16:42:34 steve Exp $
+# $Id: linkdups,v 1.22 2007/07/08 16:53:11 steve Exp $
 
 use strict;
 use warnings;
@@ -28,6 +28,7 @@ use File::Basename;
     package File::Spec::Unix;
 
     sub _cwd {
+        require Cwd;
         Cwd::getcwd();
     }
 
