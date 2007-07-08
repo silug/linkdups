@@ -12,7 +12,7 @@
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
 # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
 #
-# $Id: linkdups,v 1.20 2006/09/06 21:26:47 steve Exp $
+# $Id: linkdups,v 1.21 2007/07/08 16:42:34 steve Exp $
 
 use strict;
 use warnings;
@@ -22,6 +22,17 @@ use Digest::MD5;
 use FileHandle;
 use DirHandle;
 use File::Basename;
+
+# TEMPORARY - Work around *stupid* File::Spec::Unix bug.
+{
+    package File::Spec::Unix;
+
+    sub _cwd {
+        Cwd::getcwd();
+    }
+
+}
+# END STUPID WORKAROUND.
 
 sub usage($);
 sub info(@);
@@ -196,10 +207,14 @@ for my $dev (keys(%data)) {
                         debug "linking $source to $file...\n";
                     } else {
                         debug "unlinking $file...\n";
-                        unlink($file) or die "unlink($file) failed: $!\n";
-                        debug "linking $source to $file...\n";
-                        link($source, $file)
-                            or die "link($source,$file) failed: $!\n";
+                        if (unlink($file)) {
+                            debug "linking $source to $file...\n";
+                            link($source, $file)
+                                or die "link($source,$file) failed: $!\n";
+                        } else {
+                            warn "unlink($file) failed: $!\n";
+                            next;
+                        }
                     }
 
                     $data{$dev}->{$size}->{$master}->{'links'}++;
