@@ -62,7 +62,7 @@ our %files=();
 our %data=();
 
 our %opt;
-getopts('rvDnth', \%opt) or usage(1);
+getopts('rvDnths:', \%opt) or usage(1);
 
 usage(0) if $opt{'h'};
 
@@ -71,6 +71,7 @@ our $verbose =   defined($opt{'v'}) ? 1 : 0;
 our $debug =     defined($opt{'D'}) ? 1 : 0;
 our $dryrun =    defined($opt{'n'}) ? 1 : 0;
 our $usetimes =  defined($opt{'t'}) ? 1 : 0;
+our $minsize =   defined($opt{'s'}) ? $opt{'s'} : 1;
 
 $SIG{'USR1'}=sub {
         print STDERR "files found: $numtotal, files checked: $num, bytes "
@@ -243,6 +244,8 @@ info "saved.\n";
 sub stuff($) {
     my $file=shift;
 
+    return 1 if ($statbuf[7] < $minsize);
+
     $numtotal++;
 
     if (exists($data{$statbuf[0]}) and exists($data{$statbuf[0]}->{$statbuf[7]})
@@ -259,9 +262,6 @@ sub stuff($) {
     };
     $data{$statbuf[0]}->{$statbuf[7]}->{$statbuf[1]}->{'mtime'}=$statbuf[9]
         if ($usetimes);
-
-    $data{$statbuf[0]}->{$statbuf[7]}->{$statbuf[1]}->{'md5sum'}="d41d8cd98f00b204e9800998ecf8427e"
-        if ($statbuf[7] == 0);
 
     return 1;
 }
@@ -330,6 +330,7 @@ Usage: @{[basename($0)]} [options] [files]
     -D          Turn on debugging.
     -n          Don't link anything, just list what would be one (dry run).
     -t          Only link files that have identical timestamps.
+    -s size     Only link files size bytes and larger (defaults to 1).
 
 END
 
