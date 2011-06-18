@@ -391,9 +391,10 @@ sub initdb($) {
             "commit"
         );
 
+    my $temporary=$debug ? "" : "temporary";
     my @file_table=(
             "begin transaction",
-            "create temporary table file ("
+            "create $temporary table file ("
                 . "id integer primary key not null,"
                 . "dev unsigned integer not null,"
                 . "inum unsigned integer not null,"
