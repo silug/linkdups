@@ -22,7 +22,7 @@ use DirHandle;
 use File::Basename;
 use DBI;
 
-use feature qw(state signatures);
+use feature qw(state signatures say);
 no warnings qw(experimental::signatures);
 
 our $verbose;
@@ -85,11 +85,11 @@ END
 }
 
 sub info (@message) {
-    print @message, "\n" if ($verbose or $debug);
+    say @message if ($verbose or $debug);
 }
 
 sub debug (@message) {
-    print STDERR @message, "\n" if ($debug);
+    say STDERR @message if ($debug);
 }
 
 sub recurse_into ($dbh, $dir) {
@@ -301,8 +301,8 @@ $dryrun       = defined($opt{'n'}) ? 1 : 0;
 my $dbfile = defined($opt{'c'}) ? $opt{'c'} : ":memory:";
 
 $SIG{'USR1'} = sub {
-        print STDERR "files found: " . numtotal() . ", files checked: " . num() . ", bytes "
-            . ($dryrun ? "recoverable" : "saved") . ": " . total() . "\n";
+        say STDERR "files found: " . numtotal() . ", files checked: " . num() . ", bytes "
+            . ($dryrun ? "recoverable" : "saved") . ": " . total();
     };
 
 my $start = 0;
