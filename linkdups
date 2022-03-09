@@ -22,41 +22,51 @@ use DirHandle;
 use File::Basename;
 use DBI;
 
-# Work around *stupid* File::Spec::Unix bug.
-if (!$^V or $^V lt v5.10.0) {
-    no warnings;
+use feature qw(state signatures);
+no warnings qw(experimental::signatures);
 
-    package File::Spec::Unix;
-
-    sub _cwd {
-        require Cwd;
-        Cwd::getcwd();
-    }
-}
-# END STUPID WORKAROUND.
-
-our $dbver = 1;
-our $dbfile = ":memory:";
-
-our @statbuf = ();
-
-our $total = 0;
-our $numtotal = 0;
-our $num = 0;
-our $start = 0;
-our $pass1 = 0;
-
-our %files = ();
-
-our $recursive;
 our $verbose;
 our $debug;
 our $dryrun;
-our $usetimes;
 
-our $dbh;
+sub dbver () {
+    return 1;
+}
 
-sub usage {
+sub total ($val = 0) {
+    state $total = 0;
+
+    $total += $val if $val;
+
+    return $total;
+}
+
+sub numtotal ($val = 0) {
+    state $numtotal = 0;
+
+    $numtotal += $val if $val;
+
+    return $numtotal;
+}
+
+sub num ($val = 0) {
+    state $num = 0;
+
+    $num += $val if $val;
+
+    return $num;
+}
+
+sub dbh ($dbfile) {
+    state %dbh;
+
+    $dbh{$dbfile} //= DBI->connect("dbi:SQLite:$dbfile")
+        or die "Couldn't connect to database: " . DBI->errstr;
+
+    return $dbh{$dbfile};
+}
+
+sub usage ($exitvalue) {
     print STDERR <<END;
 
 Usage: @{[basename($0)]} [options] [files]
@@ -71,27 +81,25 @@ Usage: @{[basename($0)]} [options] [files]
 
 END
 
-    exit $_[0];
+    exit $exitvalue;
 }
 
-sub info {
-    print @_, "\n" if ($verbose or $debug);
+sub info (@message) {
+    print @message, "\n" if ($verbose or $debug);
 }
 
-sub debug {
-    print STDERR @_, "\n" if ($debug);
+sub debug (@message) {
+    print STDERR @message, "\n" if ($debug);
 }
 
-sub recurse_into {
-    my $dir = shift;
-
+sub recurse_into ($dbh, $dir) {
     if (opendir(DIR, $dir)) {
         for my $x (grep(!/^\.\.?$/, readdir(DIR))) {
-            @statbuf = lstat("$dir/$x");
+            my @statbuf = lstat("$dir/$x");
             if (-d(_)) {
-                recurse_into("$dir/$x");
+                recurse_into($dbh, "$dir/$x");
             } elsif (-f(_)) {
-                stuff("$dir/$x");
+                stuff($dbh, "$dir/$x", @statbuf);
             } else {
                 debug(basename($0),
                     ": '$dir/$x' is not a plain file, skipping...");
@@ -102,10 +110,8 @@ sub recurse_into {
     }
 }
 
-sub stuff {
-    my $file = shift;
-
-    $numtotal++;
+sub stuff ($dbh, $file, @statbuf) {
+    numtotal(1);
 
     my $sth = sql_execute($dbh,
         'select id,nlink,uid,gid,size,blocks,mtime,md5 from inode'
@@ -156,10 +162,8 @@ sub stuff {
     return 1;
 }
 
-sub checksum {
+sub checksum ($dbh, $context, $i) {
 # FIXME
-    my ($context,$i) = @_;
-
 #    return if (exists($i->{'md5sum'}));
 #
 #    # Pick the first file in the list and md5sum that.
@@ -172,7 +176,7 @@ sub checksum {
         return;
     }
 
-    $num++;
+    num(1);
 
     $context->reset();
     $context->addfile($fh);
@@ -185,9 +189,7 @@ sub checksum {
         $hash, $i->{'dev'}, $i->{'inum'});
 }
 
-sub sql_do {
-    my ($dbh,@sql) = @_;
-
+sub sql_do ($dbh, @sql) {
     for my $statement (@sql) {
         debug("Executing \"$statement\"...");
         my $result = $dbh->do($statement)
@@ -196,9 +198,7 @@ sub sql_do {
     }
 }
 
-sub sql_execute {
-    my ($dbh,$sql,@values) = @_;
-
+sub sql_execute ($dbh,$sql,@values) {
     my $sth = $dbh->prepare($sql)
         or die "prepare($sql) failed: " . $dbh->errstr . "\n";
 
@@ -210,16 +210,12 @@ sub sql_execute {
     return $sth;
 }
 
-sub db_upgrade {
-    my ($dbh, $version, $dbver) = @_;
-
+sub db_upgrade ($dbh, $version, $dbver) {
     # FIXME: We should be able to upgrade the database.
     die "Need to upgrade database from version '$version' to version '$dbver'.";
 }
 
-sub initdb {
-    my $dbh = shift;
-
+sub initdb ($dbh) {
     my @newdb = (
             "begin transaction",
             "create table linkdups ("
@@ -248,6 +244,8 @@ sub initdb {
                 . "name text not null)",
             "commit"
         );
+
+    my $dbver = dbver();
 
     if ($dbh->selectrow_array("select * from sqlite_master where type='table'")) {
         my $result = $dbh->selectrow_arrayref("select version from linkdups");
@@ -292,18 +290,20 @@ getopts('rvDnthc:', \%opt) or usage(1);
 
 usage(0) if $opt{'h'};
 
-$recursive = defined($opt{'r'}) ? 1 : 0;
-$verbose =   defined($opt{'v'}) ? 1 : 0;
-$debug =     defined($opt{'D'}) ? 1 : 0;
-$dryrun =    defined($opt{'n'}) ? 1 : 0;
-$usetimes =  defined($opt{'t'}) ? 1 : 0;
+my $recursive = defined($opt{'r'}) ? 1 : 0;
+my $usetimes  = defined($opt{'t'}) ? 1 : 0;
+$verbose      = defined($opt{'v'}) ? 1 : 0;
+$debug        = defined($opt{'D'}) ? 1 : 0;
+$dryrun       = defined($opt{'n'}) ? 1 : 0;
 
-$dbfile = $opt{'c'} if (defined($opt{'c'}));
+my $dbfile = defined($opt{'c'}) ? $opt{'c'} : ":memory:";
 
 $SIG{'USR1'} = sub {
-        print STDERR "files found: $numtotal, files checked: $num, bytes "
-            . ($dryrun ? "recoverable" : "saved") . ": $total\n";
+        print STDERR "files found: " . numtotal() . ", files checked: " . num() . ", bytes "
+            . ($dryrun ? "recoverable" : "saved") . ": " . total() . "\n";
     };
+
+my $start = 0;
 
 if ($verbose or $debug) {
     eval { use Time::HiRes qw(gettimeofday tv_interval); };
@@ -321,13 +321,15 @@ if (@ARGV) {
     }
 }
 
-$dbh = DBI->connect("dbi:SQLite:$dbfile")
-    or die "Couldn't connect to database: " . DBI->errstr;
+my $dbh = dbh($dbfile);
 
 initdb($dbh);
 
 # Pass 1 - stat() everything.
 debug("\n### PASS 1 - stat ###\n");
+
+my @statbuf = ();
+my $pass1 = 0;
 
 for my $file (@files) {
     if (!(@statbuf = lstat($file))) {
@@ -336,9 +338,9 @@ for my $file (@files) {
     }
 
     if ($recursive and (-d(_))) {
-        recurse_into($file);
+        recurse_into($dbh, $file);
     } elsif (-f(_)) {
-        stuff($file);
+        stuff($dbh, $file, @statbuf);
     } else {
         warn "$file: not a regular file\n";
         next;
@@ -355,10 +357,10 @@ if ($verbose or $debug) {
         $pass1 = time;
         $elapsed = $pass1-$^T;
     }
-    info("$numtotal files scanned in $elapsed seconds.");
+    info(numtotal() . " files scanned in $elapsed seconds.");
 }
 
-our $context = new Digest::MD5;
+my $context = new Digest::MD5;
 
 # Pass 2 - Check for potential duplicates and md5sum them.
 debug("\n### PASS 2 - Check for duplicates ###\n");
@@ -387,12 +389,12 @@ while (my $inode = $sth->fetchrow_hashref()) {
     debug("Found potential duplicate: " . $file->{'name'}
         . " [" . $file->{'dev'} . "/" . $file->{'inum'} . "] size="
         . $file->{'size'} . " (" . $file->{'blocks'} . " blocks)");
-    checksum($context, $file);
+    checksum($dbh, $context, $file);
 }
 
-info("$num files checked in "
+info(num() . " files checked in "
     . ($start ? tv_interval($pass1) : time-$pass1)
-    . " seconds ($numtotal files scanned).");
+    . " seconds (" . numtotal() . " files scanned).");
 
 # Pass 3 - Link duplicates.
 debug("\n### PASS 3 - Link duplicates ###\n");
@@ -484,11 +486,11 @@ while (my $dup = $sth->fetchrow_hashref()) {
     #                != $statbuf[3]);
     #    }
 
-    #    $total += $size;
+    #    total($size);
     #}
 }
 
-info "$total bytes "
+info total() . " bytes "
     . ($dryrun ? 'would be ' : '')
     . "saved.";
 
