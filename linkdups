@@ -21,6 +21,7 @@ use FileHandle;
 use DirHandle;
 use File::Basename;
 use DBI;
+use List::MoreUtils qw(uniq);
 
 use feature qw(state signatures say);
 no warnings qw(experimental::signatures);
@@ -423,7 +424,7 @@ while (my $dup = $sth->fetchrow_hashref()) {
     my @args = ($dup->{'dev'}, $dup->{'size'}, $dup->{'md5'});
     push(@args, $dup->{'mtime'}) if ($usetimes);
     my $filesth = sql_execute($dbh,
-        "select file.name from inode,file"
+        "select file.name,file.dev,file.inum from inode,file"
         . " where inode.dev=file.dev and inode.inum=file.inum"
         . " and inode.dev=? and inode.size=? and inode.md5=?"
         . ($usetimes ? " and inode.mtime=?" : '')
@@ -435,13 +436,11 @@ while (my $dup = $sth->fetchrow_hashref()) {
         debug(Dumper($file));
     }
 
-    next unless (@{$file} > 1);
+    my @unique = uniq(map { join('#', @$_[1, $#_]) } @{$file});
+    next unless (@{$file} > 1 and @unique > 1);
 
-    debug("Linking " . scalar(@{$file}) . " duplicates" #. " ("
-        #. scalar(map { @{$data{$dev}->{$size}->{$_}->{'files'}} }
-        #    @{$dup{$hash}})
-        #. " files)"
-        . " of size $dup->{'size'}");
+    debug("Linking " . scalar(@unique) . " duplicates ("
+        . scalar(@{$file}) . " files) of size " . $dup->{'size'});
 
     #my @inodes = sort {
     #        $data{$dev}->{$size}->{$b}->{'links'}
