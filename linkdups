@@ -31,7 +31,56 @@ our $debug;
 our $dryrun;
 
 sub dbver () {
-    return 1;
+    return 2;
+}
+
+sub begin_transaction () {
+    return 'begin transaction';
+}
+
+sub create_table_linkdups_v1 () {
+    return 'create table linkdups ('
+        . 'version unsigned integer primary key not null)';
+
+}
+
+sub create_table_inode_v1 () {
+    return 'create table inode ('
+        . 'id integer primary key not null,'
+        . 'dev unsigned integer not null,'
+        . 'inum unsigned integer not null,'
+        . 'nlink unsigned integer not null,'
+        . 'uid unsigned integer not null,'
+        . 'gid unsigned integer not null,'
+        . 'size unsigned bigint not null,'
+        . 'blocks unsigned bigint not null,'
+        . 'mtime unsigned bigint not null,'
+        . 'md5 char(32))';
+
+}
+
+sub create_index_dev_inum_v2 () {
+    return 'create unique index dev_inum on inode (dev, inum)';
+}
+
+sub create_trigger_clear_md5_v2 () {
+    return 'create trigger clear_md5 after update of size, blocks, mtime on inode for each row'
+        . ' when (old.size != new.size or old.blocks != new.blocks or old.mtime != new.mtime)'
+        . ' begin'
+        . ' update inode set md5=null where id=new.id;'
+        . ' end';
+}
+
+sub create_table_file_v1 ($temporary) {
+    return "create $temporary table file ("
+        . 'id integer primary key not null,'
+        . 'dev unsigned integer not null,'
+        . 'inum unsigned integer not null,'
+        . 'name text not null)',
+}
+
+sub commit () {
+    return 'commit';
 }
 
 sub total ($val = 0) {
@@ -61,8 +110,13 @@ sub num ($val = 0) {
 sub dbh ($dbfile) {
     state %dbh;
 
-    $dbh{$dbfile} //= DBI->connect("dbi:SQLite:$dbfile")
+    return $dbh{$dbfile} if exists($dbh{$dbfile});
+
+    $dbh{$dbfile} = DBI->connect("dbi:SQLite:$dbfile")
         or die "Couldn't connect to database: " . DBI->errstr;
+
+    # Disable synchronous writes to improve performance.
+    sql_do($dbh{$dbfile}, 'PRAGMA synchronous = OFF');
 
     return $dbh{$dbfile};
 }
@@ -114,48 +168,21 @@ sub recurse_into ($dbh, $dir) {
 sub stuff ($dbh, $file, @statbuf) {
     numtotal(1);
 
-    my $sth = sql_execute($dbh,
-        'select id,nlink,uid,gid,size,blocks,mtime,md5 from inode'
-        . ' where dev=? and inum=?',
-        $statbuf[0], $statbuf[1]);
-
-    if (my $inode = $sth->fetchrow_hashref) {
-        my $needs_update = 0;
-        my $needs_checksum = 0;
-
-        if ($inode->{'nlink'}  != $statbuf[3]
-         or $inode->{'uid'}    != $statbuf[4]
-         or $inode->{'gid'}    != $statbuf[5]
-         or $inode->{'blocks'} != $statbuf[12]) {
-            $needs_update = 1;
-        } elsif ($inode->{'size'}  != $statbuf[7]
-              or $inode->{'mtime'} != $statbuf[9]) {
-            $needs_update = 1;
-            $needs_checksum = 1;
-        }
-
-        if ($needs_update) {
-            sql_execute($dbh,
-                'update inode set nlink=?,uid=?,gid=?,size=?,blocks=?,mtime=?'
-                . ($needs_checksum ? ',md5=NULL' : '')
-                . ' where id=?',
-                @statbuf[3..5],
-                $statbuf[7],
-                $statbuf[12],
-                $statbuf[9],
-                $inode->{'id'});
-        }
-    } else {
-        sql_execute($dbh,
-            'insert into inode'
-            . ' (dev,inum,nlink,uid,gid,size,blocks,mtime)'
-            . ' values (?,?,?,?,?,?,?,?)',
-            @statbuf[0..1],
-            @statbuf[3..5],
-            $statbuf[7],
-            $statbuf[12],
-            $statbuf[9]);
-    }
+    sql_execute($dbh,
+        'insert into inode'
+        . ' (dev,inum,nlink,uid,gid,size,blocks,mtime)'
+        . ' values (?,?,?,?,?,?,?,?)'
+        . ' on conflict do'
+        . ' update set nlink=?,uid=?,gid=?,size=?,blocks=?,mtime=?',
+        @statbuf[0..1],
+        @statbuf[3..5],
+        $statbuf[7],
+        $statbuf[12],
+        $statbuf[9],
+        @statbuf[3..5],
+        $statbuf[7],
+        $statbuf[12],
+        $statbuf[9]);
 
     sql_execute($dbh, 'insert into file (dev,inum,name) values (?,?,?)',
         @statbuf[0..1], $file);
@@ -206,38 +233,41 @@ sub sql_execute ($dbh,$sql,@values) {
 }
 
 sub db_upgrade ($dbh, $version, $dbver) {
-    # FIXME: We should be able to upgrade the database.
-    die "Need to upgrade database from version '$version' to version '$dbver'.";
+    my $newversion = $version+1;
+
+    if ($version == 1) {
+        # Add the dev_inum index and clear_md5 trigger.
+        my @update = (
+            begin_transaction(),
+            create_index_dev_inum_v2(),
+            create_trigger_clear_md5_v2(),
+            "update linkdups set version=$newversion where version=$version",
+            commit(),
+        );
+        sql_do($dbh, @update);
+    } else {
+        # FIXME: We should be able to upgrade the database.
+        die "Need to upgrade database from version '$version' to version '$dbver'.";
+    }
+
+    db_upgrade($dbh, $newversion, $dbver) unless ($newversion == $dbver);
 }
 
 sub initdb ($dbh) {
     my @newdb = (
-            "begin transaction",
-            "create table linkdups ("
-                . "version unsigned integer primary key not null)",
-            "create table inode ("
-                . "id integer primary key not null,"
-                . "dev unsigned integer not null,"
-                . "inum unsigned integer not null,"
-                . "nlink unsigned integer not null,"
-                . "uid unsigned integer not null,"
-                . "gid unsigned integer not null,"
-                . "size unsigned bigint not null,"
-                . "blocks unsigned bigint not null,"
-                . "mtime unsigned bigint not null,"
-                . "md5 char(32))",
-            "commit"
-        );
+        begin_transaction(),
+        create_table_linkdups_v1(),
+        create_table_inode_v1(),
+        create_index_dev_inum_v2(),
+        create_trigger_clear_md5_v2(),
+        commit(),
+    );
 
     my $temporary = $debug ? "" : "temporary";
     my @file_table = (
-            "begin transaction",
-            "create $temporary table file ("
-                . "id integer primary key not null,"
-                . "dev unsigned integer not null,"
-                . "inum unsigned integer not null,"
-                . "name text not null)",
-            "commit"
+            begin_transaction(),
+            create_table_file_v1($temporary),
+            commit(),
         );
 
     my $dbver = dbver();
