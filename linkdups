@@ -436,60 +436,53 @@ while (my $dup = $sth->fetchrow_hashref()) {
         debug(Dumper($file));
     }
 
-    my @unique = uniq(map { join('#', @$_[1, $#_]) } @{$file});
-    next unless (@{$file} > 1 and @unique > 1);
+    next unless (@{$file} > 1);
+
+    my @unique = uniq(map { join(':', @$_[1, $#_]) } @{$file});
+    unless (@unique > 1) {
+        debug(scalar(@{$file}) ." entries for the same file, skipping...");
+        next;
+    }
 
     debug("Linking " . scalar(@unique) . " duplicates ("
         . scalar(@{$file}) . " files) of size " . $dup->{'size'});
 
-    #my @inodes = sort {
-    #        $data{$dev}->{$size}->{$b}->{'links'}
-    #        <=> $data{$dev}->{$size}->{$a}->{'links'}
-    #    } @{$dup{$hash}};
+    for my $link_candidate (@$file[1, $#$file]) {
+        my ($source, $source_dev, $source_inum) = @{$file->[0]};
+        my ($destination, $destination_dev, $destination_inum) = @$link_candidate;
 
-    # FIXME -
-    # Logic is all wrong here.  We need to pull exactly one filename
-    # for an inode to use as our "master" inode, then hardlink all
-    # the other filenames to that.
-    #my $master = shift @inodes;
-    #my $source = $data{$dev}->{$size}->{$master}->{'files'}->[0];
+        if ($source_dev == $destination_dev and $source_inum == $destination_inum) {
+            debug("Skipping existing hardlinks:\n  $source\n  $destination");
+            next;
+        }
 
-    #for my $inode (@inodes) {
-    #    debug("$dev:$master ("
-    #        . $data{$dev}->{$size}->{$master}->{'links'}
-    #        . " links) -> $dev:$inode ("
-    #        . $data{$dev}->{$size}->{$inode}->{'links'}
-    #        . " links)");
+        my @src_stat = stat($source);
+        my @dst_stat = stat($destination);
+        # TODO: Sanity-check the size/timestamp against the database.
+        debug("$source_dev:$source_inum ("
+            . $src_stat[3]
+            . " links) -> $destination_dev:$destination_inum ("
+            . $dst_stat[3]
+            . " links)");
 
-    #    for my $file
-    #        (@{$data{$dev}->{$size}->{$inode}->{'files'}}) {
-    #        if ($dryrun) {
-    #            debug("unlinking $file...");
-    #            debug("linking $source to $file...");
-    #        } else {
-    #            debug("unlinking $file...");
-    #            if (unlink($file)) {
-    #                debug("linking $source to $file...");
-    #                link($source, $file)
-    #                    or die "link($source,$file) failed: $!\n";
-    #            } else {
-    #                warn "unlink($file) failed: $!\n";
-    #                next;
-    #            }
-    #        }
+        unless ($dryrun) {
+            debug "unlinking $destination...";
+            unless (unlink($destination)) {
+                warn "unlink($destination) failed: $!\n";
+                next;
+            }
 
-    #        $data{$dev}->{$size}->{$master}->{'links'}++;
-    #    }
+            debug "linking $source to $destination...";
+            link($source, $destination)
+                or die "link($source, $destination) failed: $!\n";
 
-    #    if (!$dryrun) {
-    #        @statbuf = stat($source);
-    #        warn "Actual link count != expected!\n"
-    #            if ($data{$dev}->{$size}->{$master}->{'links'}
-    #                != $statbuf[3]);
-    #    }
+            my $nlink = $src_stat[3]+1;
+            my @after = stat($source);
+            warn "Actual link count != expected!\n" if ($nlink != $after[3]);
+        }
 
-    #    total($size);
-    #}
+        total($dup->{'size'});
+    }
 }
 
 info total() . " bytes "
