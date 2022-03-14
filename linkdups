@@ -30,11 +30,24 @@ our $verbose;
 our $debug;
 our $dryrun;
 
+# FIXME: This should be a command-line option.
+our $batch_size = 1000;
+
 sub dbver () {
     return 2;
 }
 
+sub in_transaction ($status = undef) {
+    state $transaction;
+
+    $transaction = $status if defined($status);
+
+    return $transaction;
+}
+
 sub begin_transaction () {
+    in_transaction(1);
+
     return 'begin transaction';
 }
 
@@ -80,6 +93,8 @@ sub create_table_file_v1 ($temporary) {
 }
 
 sub commit () {
+    in_transaction(0);
+
     return 'commit';
 }
 
@@ -166,6 +181,15 @@ sub recurse_into ($dbh, $dir) {
 }
 
 sub stuff ($dbh, $file, @statbuf) {
+    state $count = 0;
+
+    $count %= $batch_size;
+
+    if ($count == 0) {
+        sql_do($dbh, commit()) if in_transaction();
+        sql_do($dbh, begin_transaction());
+    }
+
     numtotal(1);
 
     sql_execute($dbh,
@@ -186,6 +210,8 @@ sub stuff ($dbh, $file, @statbuf) {
 
     sql_execute($dbh, 'insert into file (dev,inum,name) values (?,?,?)',
         @statbuf[0..1], $file);
+
+    $count++;
 
     return 1;
 }
@@ -379,6 +405,8 @@ for my $file (@files) {
         next;
     }
 }
+
+sql_do($dbh, commit()) if in_transaction();
 
 if ($verbose or $debug) {
     my $elapsed;
