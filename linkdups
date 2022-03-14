@@ -401,6 +401,9 @@ debug("\n### PASS 2 - Check for duplicates ###\n");
 query_string('inode.dev', 'inode.size');
 query_string('inode.mtime') if ($usetimes);
 
+# FIXME: This query should be broken up into
+#   1) create temporary table duplicates as select ...
+#   2) select distinct dev,inum from duplicates where md5 is null
 my $sth = sql_execute($dbh,
     "select distinct inode.dev,inode.inum"
     . " from inode,file where inode.dev=file.dev and inode.inum=file.inum"
